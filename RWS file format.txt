@@ -1,0 +1,73 @@
+RWS file format
+
+from a forum post:
+
+.RWS - Segmented sound streams. Contains raw PCM data that can be imported in one piece after the header (usually ending with lots of 0xAB + 12 bytes) and the 2020 bytes long null-filled gaps are removed.
+
+STRA0.RWS to STRA103.RWS        Music streams. 16 bit signed, big endian, stereo, 44100Hz.
+0_XEN0.RWS to 6_XEN0.RWS        Voice streams. 16 bit signed, little endian, mono, 44100Hz.
+
+
+
+Header:
+    2047 bytes
+
+    Null filled (ABABABAB) until 2047
+
+sound data
+
+    800 to 881b
+    32796 bytes long
+
+
+2020 NULL bytes
+
+
+sound data
+
+    9000 to 1101b
+
+    801c bytes long
+
+
+2020 null bytes
+
+    1101c to 117ff
+
+sound data
+
+    11800 to  1981b
+    801c bytes in length
+    32796 bytes in length
+
+null bytes
+    1981c to 19fff
+    2020 in length
+
+
+
+.........
+
+1835000 183d01b
+
+    801c bytes in length (base 16)
+
+null bytes
+    183d01c 183d7ff
+    2020 null bytes
+
+sound data
+
+    183d800 to 184003f
+
+    2840 (base 16) bytes in length
+    10304 (base 10) bytes in length
+
+    so this is shorter in size cause its the end,, then its just null bytes until the end of file
+
+
+remaining null bytes:
+    1840040 to 1845fff
+
+    5fc0 null bytes
+    24512 base 10
