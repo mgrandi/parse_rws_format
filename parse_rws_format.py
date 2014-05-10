@@ -5,51 +5,78 @@
 # written by Mark Grandi - May 9th 2014
 #
 
-import argparse, sys, traceback
+import argparse, sys, traceback, os, os.path, subprocess, tempfile
 
 
 def main(args):
     '''
     @param args - the namespace object given to us by argparse'''
 
+    # recurse and find .rws files
+    filesToProcess = list()
 
-    # read the header of the file, 2047 bytes
-    args.rwsFile.read(2047)
-    print("reading 2047")
+    for dirpath, dirnames, filenames in os.walk(args.rwsFolder):
 
-    # now loop and read the audio data, and the null bytes
-    counter = 0
-    while True:
-        counter += 1
+        for iterFileName in filenames:
 
-        if counter == 10000:
-            import pdb;pdb.set_trace()
-        print("\tpos is {}".format(args.rwsFile.tell()))
-        # test to see if we need to break
-        oldPos = args.rwsFile.tell()
-        testData = args.rwsFile.read(10)
-        print("reading 10")
+            if os.path.splitext(iterFileName)[1].lower() == ".rws":
+                filesToProcess.append(os.path.join(dirpath, iterFileName))
 
-        if testData == b'\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00' or len(testData) == 0:
-            # at the end of the file
-            print("reached 10 null bytes after reading null bytes..probably at end of file (position {})".format(oldPos))
-            break
 
-        # put back at old position
-        args.rwsFile.seek(oldPos)
 
-        # read audio data
-        iterAudioData = args.rwsFile.read(32796)
-        print("reading 32796")
+    # go through each rws file and convert it
 
-        # null bytes
-        args.rwsFile.read(2020)
-        print("reading 2020")
+    tempdir = tempfile.TemporaryDirectory()
 
-        # write to pcm file
-        args.pcmFile.write(iterAudioData)
+    print("Temporary directory is {}".format(tempdir.name))
 
-    print("finished")
+    for iterFile in filesToProcess:
+
+        filename = os.path.split(iterFile)[1]
+
+        pcmFilePath = os.path.join(tempdir.name, os.path.splitext(filename)[0] + ".pcm")
+
+        with open(iterFile, "rb") as rwsFile:
+
+            with open(pcmFilePath, "wb") as pcmFile:
+
+                # read the header of the file, 2047 bytes
+                rwsFile.read(2047)
+
+                # now loop and read the audio data, and the null bytes
+                counter = 0
+                while True:
+                    counter += 1
+
+                    
+                    # test to see if we need to break
+                    oldPos = rwsFile.tell()
+                    testData = rwsFile.read(10)
+
+                    if testData == b'\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00' or len(testData) == 0:
+                        # at the end of the file
+                        break
+
+                    # put back at old position
+                    rwsFile.seek(oldPos)
+
+                    # read audio data
+                    iterAudioData = rwsFile.read(32796)
+
+                    # null bytes
+                    rwsFile.read(2020)
+
+                    # write to pcm file
+                    pcmFile.write(iterAudioData)
+
+                outputWav = os.path.join(args.pcmFolder, os.path.splitext(filename)[0] + ".wav")
+
+                subprocess.call(["sox", "-t", "raw", "-r", "44100", "-e", "signed-integer", "-b", "16", 
+                    "--endian", "little", "-c", "2", pcmFilePath, outputWav])
+                print("finished {}: saved to {}".format(filename, outputWav))
+
+    # delete temporary directory
+    tempdir.cleanup()
 
 
 def printTraceback():
@@ -61,14 +88,29 @@ def printTraceback():
     # print exception
     traceback.print_exception(exc_type, exc_value, exc_traceback)
 
+
+def isDirectoryType(stringArg):
+    ''' helper method for argparse to see if the argument is a directory
+    @param stringArg - the argument we get from argparse
+    @return the path if it is indeed a directory, or raises ArgumentTypeError if its not.'''
+
+    path = os.path.realpath(os.path.normpath(stringArg))
+
+    if not os.path.isdir(path):
+
+        raise argparse.ArgumentTypeError("{} is not a directory!".format(path))
+
+    return path
+
+
 if __name__ == "__main__":
     # if we are being run as a real program
 
     parser = argparse.ArgumentParser(description="parses a rws audio file (xbox 360) and converts it to pcm", 
     epilog="Copyright Mark Grandi, May 9, 2014")
 
-    parser.add_argument("rwsFile", type=argparse.FileType("rb"), help="the input RWS file")
-    parser.add_argument("pcmFile", type=argparse.FileType("wb"), help="the output PCM file")
+    parser.add_argument("rwsFolder", type=isDirectoryType, help="the folder containing .RWS files")
+    parser.add_argument("pcmFolder", type=isDirectoryType, help="the folder where we output the .pcm files")
 
     try:
         main(parser.parse_args())
