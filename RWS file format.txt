@@ -1,6 +1,6 @@
 RWS file format
 
-from a forum post:
+from a forum post: (http://forum.xentax.com/viewtopic.php?f=10&t=9909)
 
 .RWS - Segmented sound streams. Contains raw PCM data that can be imported in one piece after the header (usually ending with lots of 0xAB + 12 bytes) and the 2020 bytes long null-filled gaps are removed.
 
