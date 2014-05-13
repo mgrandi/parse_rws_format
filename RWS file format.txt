@@ -2,9 +2,9 @@ RWS file format
 
 from a forum post: (http://forum.xentax.com/viewtopic.php?f=10&t=9909)
 
-.RWS - Segmented sound streams. Contains raw PCM data that can be imported in one piece after the header (usually ending with lots of 0xAB + 12 bytes) and the 2020 bytes long null-filled gaps are removed.
+.RWS - Segmented sound streams. Contains raw PCM data that can be imported in one piece after the header (usually ending with lots of 0xAB + 12 bytes) and the 2020 bytes long null-filled gaps are removed. AKA 'RenderWave Sound files'
 
-STRA0.RWS to STRA103.RWS        Music streams. 16 bit signed, big endian, stereo, 44100Hz.
+STRA0.RWS to STRA103.RWS        Music streams. 16 bit signed, little endian, stereo, 44100Hz. FORUM POST IS INCORRECT AND SAYS BIG ENDIAN
 0_XEN0.RWS to 6_XEN0.RWS        Voice streams. 16 bit signed, little endian, mono, 44100Hz.
 
 
@@ -71,3 +71,122 @@ remaining null bytes:
 
     5fc0 null bytes
     24512 base 10
+
+
+
+
+
+###################
+
+
+KXE file stuff
+
+
+offset 28a2458 (hex), start of offset table?
+
+
+start of LZMA stream, found it in file:
+
+
+FF 4C 5A 4D 41 00
+
+
+found at 25880 (hex)
+
+they all appear to be garbage.... i doubt anything is compressed with lzma. Binwalk says that executable code often
+gives false positives for lzma streams
+
+
+HOWEVER
+
+*************************
+
+it seems that if you search for the strings "DDS" and "DXT4", those are textures apparently
+
+
+FF FF FF FF CC CC CC CC could be the start of meshes? the poster thinks
+
+
+back to DDS textures:
+
+    starting at offset 0x78FA
+
+
+44 44 53 20 = 'DDS ' (magic number)
+
+then looking at http://msdn.microsoft.com/en-us/library/windows/desktop/bb943982%28v=vs.85%29.aspx, 
+
+and http://msdn.microsoft.com/en-us/library/windows/desktop/bb943984%28v=vs.85%29.aspx
+
+description of DDS_HEADER  / DDS_PIXELFORMAT structs:
+
+
+'   7C 00 00 00 07 10 02 00 '
+'80 00 00 00 80 00 00 00 00 '
+'00 00 00 00 00 00 00 03 00 '
+'00 00 00 00 00 00 00 00 00 '
+'00 00 00 00 00 00 00 00 00 '
+'00 00 00 00 00 00 00 00 00 '
+'00 00 00 00 00 00 00 00 00 '
+'00 00 00 00 00 00 00 00 00 '
+'00 20 00 00 00 04 00 00 00 '
+'44 58 54 34 00 00 00 00 00 '
+'00 00 00 00 00 00 00 00 00 '
+'00 00 00 00 00 00 08 10 40 '
+'00 00 00 00 00 00 00 00 00 '
+'00 00 00 00 00 00 00 00 '
+
+
+typedef struct {
+  DWORD           dwSize; = 124
+  DWORD           dwFlags; = 07 10 02 00 hex
+  DWORD           dwHeight; = 128
+  DWORD           dwWidth; = 128
+  DWORD           dwPitchOrLinearSize; = 0
+  DWORD           dwDepth; =  0
+  DWORD           dwMipMapCount; = 3
+  DWORD           dwReserved1[11];
+  DDS_PIXELFORMAT ddspf;
+
+      DWORD dwSize; 2
+      DWORD dwFlags; 4
+      DWORD dwFourCC; 44 58 54 34 (DXT4)
+      DWORD dwRGBBitCount; 0
+      DWORD dwRBitMask; 0
+      DWORD dwGBitMask; 0
+      DWORD dwBBitMask; 0
+      DWORD dwABitMask; 0
+  DWORD           dwCaps; 0
+  DWORD           dwCaps2; 08 10 40 00
+  DWORD           dwCaps3; 0
+  DWORD           dwCaps4; 0
+  DWORD           dwReserved2; 0
+} DDS_HEADER;
+
+DWORD dwSize = 124
+    in file: 7C 00 00 00
+
+DWORD dwFlags 
+    in file: 07 10 02 00
+
+    so thats 135175 in decimal
+    0000 0111 0001 0000 0000 0010 0000 0000  in binary
+
+                                  0000 0001 0x1
+                                  0000 0010 0x2
+                                  0000 0100 0x4
+                                  0000 1000 0x8
+                           1 0000 0000 0000 0x1000
+                     10 0000 0000 0000 0000 0x20000
+                   1000 0000 0000 0000 0000 0x80000
+              1000 0000 0000 0000 0000 0000 0x800000
+
+DWORD dwHeight 
+    in file 80 00 00 00
+    128 in dec
+
+DWORD dwWidth
+    in file: 80 00 00 00
+    128 in dec
+
+
