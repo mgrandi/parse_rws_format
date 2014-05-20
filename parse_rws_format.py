@@ -5,7 +5,7 @@
 # written by Mark Grandi - May 9th 2014
 #
 
-import argparse, sys, traceback, os, os.path, subprocess, tempfile
+import argparse, sys, traceback, os, os.path, subprocess, tempfile, shutil
 
 
 def main(args):
@@ -69,11 +69,22 @@ def main(args):
                     # write to pcm file
                     pcmFile.write(iterAudioData)
 
-                outputWav = os.path.join(args.pcmFolder, os.path.splitext(filename)[0] + ".wav")
+                if args.justDumpRaw:
 
-                subprocess.call(["sox", "-t", "raw", "-r", "44100", "-e", "signed-integer", "-b", "16", 
-                    "--endian", "little", "-c", "2", pcmFilePath, outputWav])
-                print("finished {}: saved to {}".format(filename, outputWav))
+                    # we are not converting, just dumping the raw pcm file 
+                    outputPcm = os.path.join(args.wavFolder, os.path.splitext(filename)[0] + ".pcm")
+
+                    shutil.copyfile(pcmFilePath, outputPcm)
+                    print("finished {}: raw pcm copied to {}".format(filename, outputPcm))
+
+                else:
+                    # convert as normal
+                    outputWav = os.path.join(args.wavFolder, os.path.splitext(filename)[0] + ".wav")
+
+                    # sox -t raw -r 44100 -e signed-integer -b 16 <input file> <output file>
+                    subprocess.call(["sox", "-t", "raw", "-r", "44100", "-e", "signed-integer", "-b", "16", 
+                        "--endian", "little", "-c", "2", pcmFilePath, outputWav])
+                    print("finished {}: converted and saved to {}".format(filename, outputWav))
 
     # delete temporary directory
     tempdir.cleanup()
@@ -110,7 +121,9 @@ if __name__ == "__main__":
     epilog="Copyright Mark Grandi, May 9, 2014")
 
     parser.add_argument("rwsFolder", type=isDirectoryType, help="the folder containing .RWS files")
-    parser.add_argument("pcmFolder", type=isDirectoryType, help="the folder where we output the .pcm files")
+    parser.add_argument("wavFolder", type=isDirectoryType, help="the folder where we output the .wav files")
+    parser.add_argument("--justDumpRaw", action="store_true", help="if set then we will just dump the raw .pcm files to "
+        "wavFolder and not run them through sox")
 
     try:
         main(parser.parse_args())

@@ -120,6 +120,8 @@ and http://msdn.microsoft.com/en-us/library/windows/desktop/bb943984%28v=vs.85%2
 
 description of DDS_HEADER  / DDS_PIXELFORMAT structs:
 
+starting at offset 30969 decimal
+
 
 '   7C 00 00 00 07 10 02 00 '
 '80 00 00 00 80 00 00 00 00 '
@@ -156,12 +158,18 @@ typedef struct {
       DWORD dwGBitMask; 0
       DWORD dwBBitMask; 0
       DWORD dwABitMask; 0
-  DWORD           dwCaps; 0
-  DWORD           dwCaps2; 08 10 40 00
+  DWORD           dwCaps; 08 10 40 00
+  DWORD           dwCaps2; 0
   DWORD           dwCaps3; 0
   DWORD           dwCaps4; 0
   DWORD           dwReserved2; 0
 } DDS_HEADER;
+
+
+probably fucked this up
+100 0000 0001 0000 0000 1000 0000 0000 dcaps dword (08 10 40 00)
+                      1 0000 0000 0000 texture mask
+          100 0000 0000 0000 0000 0000 mipmap mask
 
 DWORD dwSize = 124
     in file: 7C 00 00 00
