@@ -1,5 +1,6 @@
-#
-# parse rws file format
+#!/usr/bin/env python3
+# 
+# parse rws file format and extract it, then run it through sox to produce a wav
 #
 #
 # written by Mark Grandi - May 9th 2014
@@ -36,11 +37,13 @@ def main(args):
 
         pcmFilePath = os.path.join(tempdir.name, os.path.splitext(filename)[0] + ".pcm")
 
+        testBytes = (0).to_bytes(100, "little")
+
         with open(iterFile, "rb") as rwsFile:
 
             with open(pcmFilePath, "wb") as pcmFile:
 
-                # read the header of the file, 2047 bytes
+                # read the header of the file, 2048 bytes (2047 in 0 based)
                 rwsFile.read(2047)
 
                 # now loop and read the audio data, and the null bytes
@@ -51,9 +54,12 @@ def main(args):
                     
                     # test to see if we need to break
                     oldPos = rwsFile.tell()
-                    testData = rwsFile.read(10)
+                    testData = rwsFile.read(100)
 
-                    if testData == b'\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00' or len(testData) == 0:
+                    # see if we are at the end of the file? cause at the end of the file we have more then
+                    # 2020 NULL bytes so if we get 100 consecutive bytes of NULL then its pretty safe to say
+                    # that we are at the end of the file
+                    if testData == testBytes or len(testData) == 0:
                         # at the end of the file
                         break
 
@@ -81,7 +87,7 @@ def main(args):
                     # convert as normal
                     outputWav = os.path.join(args.wavFolder, os.path.splitext(filename)[0] + ".wav")
 
-                    # sox -t raw -r 44100 -e signed-integer -b 16 <input file> <output file>
+                    # sox -t raw -r 44100 -e signed-integer -b 16  --endian little -c 2 <input file> <output file>
                     subprocess.call(["sox", "-t", "raw", "-r", "44100", "-e", "signed-integer", "-b", "16", 
                         "--endian", "little", "-c", "2", pcmFilePath, outputWav])
                     print("finished {}: converted and saved to {}".format(filename, outputWav))
@@ -117,7 +123,7 @@ def isDirectoryType(stringArg):
 if __name__ == "__main__":
     # if we are being run as a real program
 
-    parser = argparse.ArgumentParser(description="parses a rws audio file (xbox 360) and converts it to pcm", 
+    parser = argparse.ArgumentParser(description="parses a rws audio file (xbox 360) and converts it to pcm, then run it through sox to produce a WAV", 
     epilog="Copyright Mark Grandi, May 9, 2014")
 
     parser.add_argument("rwsFolder", type=isDirectoryType, help="the folder containing .RWS files")
