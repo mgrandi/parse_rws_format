@@ -6,7 +6,7 @@
 # written by Mark Grandi - Jun 4, 2014
 #
 
-import argparse, sys, struct, os, os.path, subprocess
+import argparse, sys, struct, os, os.path, subprocess, tempfile, shutil
 from enum import Enum
 from collections import namedtuple
 
@@ -242,77 +242,124 @@ def parseAndConvertRws(args):
     @param args - the namespace object we get from argparse.parse_args()
     '''
 
-    # open the file
-    with open(args.rwsInputFile, "rb") as f:
+    # recurse and find .rws files
+    filesToProcess = list()
 
-        # read the 'container' chunk header
-        initalHeader = _readChunkHeader(f)
+    for dirpath, dirnames, filenames in os.walk(args.rwsFolder):
 
-        print("chunk Container header: {}".format(initalHeader))
+        for iterFileName in filenames:
 
-        # then read the audio header:
-        audioChunkHeader = _readChunkHeader(f)
-        print("chunk audio header: {}".format(audioChunkHeader))
-
-        # read the audio header that has stuff like number of tracks, organization, parameters, etc
-        audioHeader = RWSAudioHeader()
-        audioHeader.readHeader(f)
-
-        # once we are done with that, we still have to read to the rest of the 'chunk' that the 
-        # Audio header is placed in. in the RWSAudioHeader object we recorded the file position
-        # when we started reading, so we just need to make sure that the file position is
-        # audioChunkHeader.chunkSize bytes from the _fileStartPos variable in audioHeader
-
-        needToRead = audioChunkHeader.chunkSize - (f.tell() - audioHeader._fileStartPos)
-        f.read(needToRead)
-
-        print("audio header: {}".format(audioHeader))
-
-        # read the audio data chunk header
-
-        audioDataChunkHeader = _readChunkHeader(f)
-        print("audio data chunk header: {}".format(audioDataChunkHeader))
+            if os.path.splitext(iterFileName)[1].lower() == ".rws":
+                filesToProcess.append(os.path.join(dirpath, iterFileName))
 
 
-        # now read up to audioDataChunkHeader.chunkSize bytes and get the audio data
-        # read up to tmpTrack.trackOrganization.bytesUsedPerCluster bytes, then skip over the 'cluster waste'
-        # (tmpTrack.clusterSize - tmpTrack.trackOrganization.bytesUsedPerCluster), then start again
 
-        # TODO doesn't handle multiple tracks at the moment!
+    # go through each rws file and convert it
 
-        tmpTrack = audioHeader.trackList[0]
+    tempdir = tempfile.TemporaryDirectory()
 
-        realDataSize = tmpTrack.trackOrganization.bytesUsedPerCluster
-        wasteSize = tmpTrack.trackOrganization.clusterSize - tmpTrack.trackOrganization.bytesUsedPerCluster
+    print("Temporary directory is {}".format(tempdir.name))
 
-        with open(args.wavOutputFile, "wb") as f2:
+    counter = 1
+    for iterFile in filesToProcess:
 
-            while True:
-                # real audio data
-                print("reading {} bytes (pos {})".format(realDataSize, f.tell()))
-                tmp = f.read(realDataSize)
+        # open the file
+        with open(iterFile, "rb") as f:
 
-                if tmp == None or len(tmp) == 0:
-                    break
+            filename = os.path.split(iterFile)[1]
 
-                # write to output file
-                print("writing {} bytes to output file, f2 pos: {}\n\n".format(len(tmp), f2.tell()))
-                f2.write(tmp)
-                
-                # skip waste
-                print("reading {} waste bytes (pos {})".format(wasteSize, f.tell()))
-                f.read(wasteSize)
+            pcmFilePath = os.path.join(tempdir.name, os.path.splitext(filename)[0] + ".pcm")
 
-                
+            # read the 'container' chunk header
+            initalHeader = _readChunkHeader(f)
 
-        
-        # now run sox
-        soxedFilename = os.path.join(os.path.split(args.wavOutputFile)[0], os.path.splitext(os.path.split(args.wavOutputFile)[1])[0] + "_soxed.wav")
+            #print("chunk Container header: {}".format(initalHeader))
 
-        # sox -t raw -r 44100 -e signed-integer -b 16  --endian little -c 2 <input file> <output file>
-        subprocess.call(["sox", "-t", "raw", "-r", "48000", "-e", "signed-integer", "-b", "16", 
-            "--endian", "little", "-c", "2", args.wavOutputFile, soxedFilename])
-        print("finished")
+            # then read the audio header:
+            audioChunkHeader = _readChunkHeader(f)
+            #print("chunk audio header: {}".format(audioChunkHeader))
+
+            # read the audio header that has stuff like number of tracks, organization, parameters, etc
+            audioHeader = RWSAudioHeader()
+            audioHeader.readHeader(f)
+
+            # once we are done with that, we still have to read to the rest of the 'chunk' that the 
+            # Audio header is placed in. in the RWSAudioHeader object we recorded the file position
+            # when we started reading, so we just need to make sure that the file position is
+            # audioChunkHeader.chunkSize bytes from the _fileStartPos variable in audioHeader
+
+            needToRead = audioChunkHeader.chunkSize - (f.tell() - audioHeader._fileStartPos)
+            f.read(needToRead)
+
+            #print("audio header: {}".format(audioHeader))
+
+            # read the audio data chunk header
+
+            audioDataChunkHeader = _readChunkHeader(f)
+            #print("audio data chunk header: {}".format(audioDataChunkHeader))
+
+
+            # now read up to audioDataChunkHeader.chunkSize bytes and get the audio data
+            # read up to tmpTrack.trackOrganization.bytesUsedPerCluster bytes, then skip over the 'cluster waste'
+            # (tmpTrack.clusterSize - tmpTrack.trackOrganization.bytesUsedPerCluster), then start again
+
+            # TODO doesn't handle multiple tracks at the moment!
+
+            tmpTrack = audioHeader.trackList[0]
+
+            realDataSize = tmpTrack.trackOrganization.bytesUsedPerCluster
+            wasteSize = tmpTrack.trackOrganization.clusterSize - tmpTrack.trackOrganization.bytesUsedPerCluster
+
+            with open(pcmFilePath, "wb") as f2:
+
+                # loop and write data to the pcm file, skipping over the waste in the clusters
+                while True:
+                    # real audio data
+                    #print("reading {} bytes (pos {})".format(realDataSize, f.tell()))
+                    tmp = f.read(realDataSize)
+
+                    if tmp == None or len(tmp) == 0:
+                        break
+
+                    # write to output file
+                    #print("writing {} bytes to output file, f2 pos: {}\n\n".format(len(tmp), f2.tell()))
+                    f2.write(tmp)
+
+                    # skip waste
+                    #print("reading {} waste bytes (pos {})".format(wasteSize, f.tell()))
+                    f.read(wasteSize)
+
+                # write a dummmy null byte?
+                f2.write(b'\x00')
+
+                if args.justDumpRaw:
+
+                        # we are not converting, just dumping the raw pcm file 
+                        outputPcm = os.path.join(args.wavFolder, os.path.splitext(filename)[0] + ".pcm")
+
+                        shutil.copyfile(pcmFilePath, outputPcm)
+                        print("finished {}: raw pcm copied to {}".format(filename, outputPcm))
+
+                else:
+                    # convert as normal
+                    outputWav = os.path.join(args.wavFolder, os.path.splitext(filename)[0] + ".wav")
+
+                    # sox -t raw -r 44100 -e signed-integer -b 16  --endian little -c 2 <input file> <output file>
+                    subprocess.call(["sox", "-t", "raw", "-r", "48000", "-e", "signed-integer", "-b", "16", 
+                        "--endian", "big", "-c", "2", pcmFilePath, outputWav])
+                    print("finished {}/{} {}: converted and saved to {}".format(counter, len(filesToProcess), filename, outputWav))  
+
+            
+            # # now run sox
+            # soxedFilename = os.path.join(os.path.split(args.wavOutputFile)[0], os.path.splitext(os.path.split(args.wavOutputFile)[1])[0] + "_soxed.wav")
+
+            # # sox -t raw -r 44100 -e signed-integer -b 16  --endian little -c 2 <input file> <output file>
+            # subprocess.call(["sox", "-t", "raw", "-r", "48000", "-e", "signed-integer", "-b", "16", 
+            #     "--endian", "little", "-c", "2", args.wavOutputFile, soxedFilename])
+        counter += 1
+
+    print("finished")
+
 
 
 def isFileType(filePath):
@@ -347,9 +394,10 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="parses and converts an RWS file into WAV", 
     epilog="Copyright Jun 4, 2014 Mark Grandi")
 
-    parser.add_argument('rwsInputFile', type=isFileType, help="the input RWS file")
+    parser.add_argument('rwsFolder', type=isDirectoryType, help="the folder containing .RWS files")
 
-    parser.add_argument("wavOutputFile", help="where to output the .WAV file")
-    
+    parser.add_argument("wavFolder", help="the folder where we output the .wav filese")
+    parser.add_argument("--justDumpRaw", action="store_true", help="if set then we will just dump the raw .pcm files to "
+        "wavFolder and not run them through sox")
 
     parseAndConvertRws(parser.parse_args())
