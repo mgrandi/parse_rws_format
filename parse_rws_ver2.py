@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 #
 #
-# version 2 of the 'convert RWS to wav' script
+# version 2 of the 'convert RWS to FLAC' script
 #
 # written by Mark Grandi - Jun 4, 2014
 #
@@ -335,27 +335,26 @@ def parseAndConvertRws(args):
                 if args.justDumpRaw:
 
                         # we are not converting, just dumping the raw pcm file 
-                        outputPcm = os.path.join(args.wavFolder, os.path.splitext(filename)[0] + ".pcm")
+                        outputPcm = os.path.join(args.outputFolder, os.path.splitext(filename)[0] + ".pcm")
 
                         shutil.copyfile(pcmFilePath, outputPcm)
                         print("finished {}: raw pcm copied to {}".format(filename, outputPcm))
 
                 else:
                     # convert as normal
-                    outputWav = os.path.join(args.wavFolder, os.path.splitext(filename)[0] + ".wav")
+                    outputFile = os.path.join(args.outputFolder, os.path.splitext(filename)[0] + ".flac")
 
-                    # sox -t raw -r 44100 -e signed-integer -b 16  --endian little -c 2 <input file> <output file>
-                    subprocess.call(["sox", "-t", "raw", "-r", "48000", "-e", "signed-integer", "-b", "16", 
-                        "--endian", "big", "-c", "2", pcmFilePath, outputWav])
-                    print("finished {}/{} {}: converted and saved to {}".format(counter, len(filesToProcess), filename, outputWav))  
+                    argList = ["ffmpeg", "-f", "s16be", "-ar", "48000", "-ac", "2", "-i", pcmFilePath, 
+                        "-codec", "flac", "-compression_level", "8", "-y", outputFile]
 
-            
-            # # now run sox
-            # soxedFilename = os.path.join(os.path.split(args.wavOutputFile)[0], os.path.splitext(os.path.split(args.wavOutputFile)[1])[0] + "_soxed.wav")
+                    # TODO manually coding in 48000 sample rate, 2 channels, etc instead of using data from file format
+                    try:
+                        subprocess.check_output(argList, stderr=subprocess.STDOUT, universal_newlines=True)
+                    except subprocess.CalledProcessError as e:
+                        sys.exit('''Error calling ffmpeg on file {} !\n\nGot return code {}, while running command: \n'{}'\n\noutput:\n################\n{}\n################'''
+                            .format(filename, e.returncode, " ".join(e.cmd), e.output))
+                    print("({}/{}) {}: converted and saved to {}".format(counter, len(filesToProcess), filename, outputFile))  
 
-            # # sox -t raw -r 44100 -e signed-integer -b 16  --endian little -c 2 <input file> <output file>
-            # subprocess.call(["sox", "-t", "raw", "-r", "48000", "-e", "signed-integer", "-b", "16", 
-            #     "--endian", "little", "-c", "2", args.wavOutputFile, soxedFilename])
         counter += 1
 
     print("finished")
@@ -391,13 +390,17 @@ def isDirectoryType(stringArg):
 if __name__ == "__main__":
     # if we are being run as a real program
 
-    parser = argparse.ArgumentParser(description="parses and converts an RWS file into WAV", 
+    parser = argparse.ArgumentParser(description="parses and converts an RWS file into FLAC", 
     epilog="Copyright Jun 4, 2014 Mark Grandi")
 
     parser.add_argument('rwsFolder', type=isDirectoryType, help="the folder containing .RWS files")
 
-    parser.add_argument("wavFolder", help="the folder where we output the .wav filese")
+    parser.add_argument("outputFolder", help="the folder where we output the flac files")
     parser.add_argument("--justDumpRaw", action="store_true", help="if set then we will just dump the raw .pcm files to "
-        "wavFolder and not run them through sox")
+        "outputFolder and not run them through ffmpeg")
 
-    parseAndConvertRws(parser.parse_args())
+
+    try:
+        parseAndConvertRws(parser.parse_args())
+    except Exception as e:
+        sys.exit("Something went wrong! error: {}".format(e))
