@@ -6,7 +6,7 @@
 # written by Mark Grandi - Jun 4, 2014
 #
 
-import argparse, sys, struct, os, os.path, subprocess, tempfile, shutil
+import argparse, sys, struct, os, os.path, subprocess, tempfile, shutil, logging
 from enum import Enum
 from collections import namedtuple
 
@@ -242,6 +242,12 @@ def parseAndConvertRws(args):
     @param args - the namespace object we get from argparse.parse_args()
     '''
 
+    level = logging.WARNING
+    if args.verbose:
+        level = logging.DEBUG
+
+    logging.basicConfig(level=level)
+
     # recurse and find .rws files
     filesToProcess = list()
 
@@ -253,12 +259,13 @@ def parseAndConvertRws(args):
                 filesToProcess.append(os.path.join(dirpath, iterFileName))
 
 
+    logging.debug("List of files to process: {}".format(filesToProcess))
 
     # go through each rws file and convert it
 
     tempdir = tempfile.TemporaryDirectory()
 
-    print("Temporary directory is {}".format(tempdir.name))
+    logging.debug("Temporary directory is {}".format(tempdir.name))
 
     counter = 1
     for iterFile in filesToProcess:
@@ -273,11 +280,11 @@ def parseAndConvertRws(args):
             # read the 'container' chunk header
             initalHeader = _readChunkHeader(f)
 
-            #print("chunk Container header: {}".format(initalHeader))
+            logging.debug("chunk Container header: {}".format(initalHeader))
 
             # then read the audio header:
             audioChunkHeader = _readChunkHeader(f)
-            #print("chunk audio header: {}".format(audioChunkHeader))
+            logging.debug("chunk audio header: {}".format(audioChunkHeader))
 
             # read the audio header that has stuff like number of tracks, organization, parameters, etc
             audioHeader = RWSAudioHeader()
@@ -291,12 +298,12 @@ def parseAndConvertRws(args):
             needToRead = audioChunkHeader.chunkSize - (f.tell() - audioHeader._fileStartPos)
             f.read(needToRead)
 
-            #print("audio header: {}".format(audioHeader))
+            logging.debug("audio header: {}".format(audioHeader))
 
             # read the audio data chunk header
 
             audioDataChunkHeader = _readChunkHeader(f)
-            #print("audio data chunk header: {}".format(audioDataChunkHeader))
+            logging.debug("audio data chunk header: {}".format(audioDataChunkHeader))
 
 
             # now read up to audioDataChunkHeader.chunkSize bytes and get the audio data
@@ -338,7 +345,7 @@ def parseAndConvertRws(args):
                         outputPcm = os.path.join(args.outputFolder, os.path.splitext(filename)[0] + ".pcm")
 
                         shutil.copyfile(pcmFilePath, outputPcm)
-                        print("finished {}: raw pcm copied to {}".format(filename, outputPcm))
+                        logging.info("finished {}: raw pcm copied to {}".format(filename, outputPcm))
 
                 else:
                     # convert as normal
@@ -353,11 +360,11 @@ def parseAndConvertRws(args):
                     except subprocess.CalledProcessError as e:
                         sys.exit('''Error calling ffmpeg on file {} !\n\nGot return code {}, while running command: \n'{}'\n\noutput:\n################\n{}\n################'''
                             .format(filename, e.returncode, " ".join(e.cmd), e.output))
-                    print("({}/{}) {}: converted and saved to {}".format(counter, len(filesToProcess), filename, outputFile))  
+                    logging.info("({}/{}) {}: converted and saved to {}".format(counter, len(filesToProcess), filename, outputFile))  
 
         counter += 1
 
-    print("finished")
+    logging.info("finished")
 
 
 
@@ -409,6 +416,7 @@ if __name__ == "__main__":
     parser.add_argument("outputFolder", help="the folder where we output the flac files")
     parser.add_argument("--justDumpRaw", action="store_true", help="if set then we will just dump the raw .pcm files to "
         "outputFolder and not run them through ffmpeg")
+    parser.add_argument("--verbose", action="store_true", help="increase verbosity")
 
 
     try:

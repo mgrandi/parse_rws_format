@@ -1,0 +1,325 @@
+>>> x = open("/Users/markgrandi/Code/bzr_new/parse_rws_format/STRA36.RWS", "rb")
+>>> import struct
+>>> tmpfmt = "<I";struct.unpack(tmpfmt, x.read(struct.calcsize(tmpfmt))
+... )
+(2061,)
+>>> int("0x0000080d", 16)
+2061
+>>> tmpfmt = "<I";struct.unpack(tmpfmt, x.read(struct.calcsize(tmpfmt))) # RWS chunk data size (#2)
+(54175732,)
+>>> tmpfmt = "<I";struct.unpack(tmpfmt, x.read(struct.calcsize(tmpfmt))) # RWS chunk version (#3)
+(469893221,)
+>>> int("0x1803ffff", 16)
+402915327
+>>> int("0x1803ffff", 16) # version of broken sword - the sleeping dragon's rws format
+402915327
+>>> tmpfmt = "<I";struct.unpack(tmpfmt, x.read(struct.calcsize(tmpfmt))) # start chunk, rws chunk type(4)
+(2062,)
+>>> int("0x0000080e", 16)
+2062
+>>> # 2062 matches the chunk data type in the wiki
+...
+>>> # 2062 is audio header
+...
+>>> tmpfmt = "<I";struct.unpack(tmpfmt, x.read(struct.calcsize(tmpfmt))) # rws chunk data size (5)
+(2012,)
+>>> tmpfmt = "<I";struct.unpack(tmpfmt, x.read(struct.calcsize(tmpfmt))) # rws chunk version (6)
+(469893221,)
+>>> x.tell()
+24
+>>> tmpfmt = "<I";struct.unpack(tmpfmt, x.read(struct.calcsize(tmpfmt))) # header size (7)
+(134283264,)
+>>> x.tell()
+28
+>>> int("0x0000008", "16")
+Traceback (most recent call last):
+  File "<stdin>", line 1, in <module>
+TypeError: 'str' object cannot be interpreted as an integer
+>>> int("0x0000008", 16)
+8
+>>> struct.unpack("<I", b'\x00\x00\x01\x08')
+(134283264,)
+>>> struct.unpack(">I", b'\x00\x00\x01\x08')
+(264,)
+>>> # that 'header size' number is way off =/
+...
+>>> y = x.read(36) # 'unknown' (8)
+>>> tmpfmt = "<I";struct.unpack(tmpfmt, x.read(struct.calcsize(tmpfmt))) # number of tracks (9)
+(16777216,)
+>>> x.tell()
+68
+>>> struct.unpack("<I", b'\x00\x00\x00\x01')
+(16777216,)
+>>> struct.unpack(">I", b'\x00\x00\x00\x01')
+(1,)
+>>> # this is BIG ENDIAN, not little endian!
+...
+>>> y = x.read(20) # 'unknown' (10)
+>>> y = x.read(16) # 'some kind of signature ' (11)
+>>> y
+b'\x86\xc2^=\x9f\xdd@\x7f\x8aq%\x1a\xbby5\xe3'
+>>> x.tell()
+104
+>>>
+>>> def _readCString(theFile):
+...     ''' method that will read a c string given a file and return it'''
+...     # need to read bytes until we get null byte cause this is a null
+...     # terminated c string
+...     stringBuffer = bytearray()
+...     while True:
+...         tmp = theFile.read(1)
+...         if tmp is not None and len(tmp) != 0:
+...             if tmp != b'\x00':
+...                 stringBuffer += tmp
+...             else:
+...                 # found the null terminator, we are done
+...                 return stringBuffer.decode("utf-8")
+...         else:
+...             # end of file?
+...             args.outfile.write("unexpected end of file.... trying to convert what we have" +
+...                 " to utf-8\n")
+...             return stringBuffer.decode("utf-8")
+...
+>>> _readCString(x)
+'Stream0'
+>>> # stream name 1 (zero-terminated, padded to 16 byte boundary) (12)
+...
+>>> x.tell()
+112
+>>> # next 4 bytes are 0xAB because they are 'padded'...why? lol
+...
+>>> x.seek(x.tell() + 8) # manually seek to 16 byte boundary
+120
+>>> x.read(24) # unknown (13)
+b'\x01"\xfa\x98\x01"\xfcH\x00\x00\x00\x00\x01#\x1d\xfc\x00\x00\x00\x00\x00\x00\x00\x00'
+>>> tmpfmt = ">I";struct.unpack(tmpfmt, x.read(struct.calcsize(tmpfmt))) # data size (14)
+(54173696,)
+>>> 54175744 - 54173696
+2048
+>>> # tada, the data size is the length of file - 2048 =P
+...
+>>> x.read(4) # unknown (15)
+b'\x00\x00\x00\x00'
+>>> x.tell()
+152
+>>> struct.unpack(">I", b'\x01\x22\xfc\x48')
+(19070024,)
+>>> # ignore that ^
+...
+>>> # starting here, we are iterating over each track
+...
+>>> x.read(4) # unknown (16)
+b'\x03\nx\x04'
+>>> x.read(16) # unknown, some kind of signature?
+b'\xd4\x0ca\xb1\xee^B\xc3\xa0\xe1/hG\x00\x8d\xef'
+>>> # that was (17)
+...
+>>> x.tell()
+172
+>>> _readCString(x)
+'Segment0'
+>>> # so "Stream name 2" (18) is this, but its null terminated and padded to 16 byte boundary
+...
+>>> x.tell()
+181
+>>> 181 - 172
+9
+>>> 16-9
+7
+>>> x.read(7) # read rest of 16 byte boundary
+b'\xab\xab\xab\xab\xab\xab\xab'
+>>> x.tell()
+188
+>>> # for each track (physical organization)
+...
+>>> x.read(16) # unknown (19)
+b'\x01"\xfc\xd0\x00\xc7\xf0\xb8\x00\x00\x00\x00\x00\x00\x00\x01'
+>>>
+>>> tmpfmt = ">I";struct.unpack(tmpfmt, x.read(struct.calcsize(tmpfmt))) # cluster size (20)
+(34816,)
+>>> x.read(12) # unknown (21)
+b'\x01#\x1e \x00\x02\x00\x02 \x07\x00\x00'
+>>> tmpfmt = ">I";struct.unpack(tmpfmt, x.read(struct.calcsize(tmpfmt))) # used bytes per cluster (22)
+(32796,)
+>>> tmpfmt = ">I";struct.unpack(tmpfmt, x.read(struct.calcsize(tmpfmt))) # track start offset (23)
+(0,)
+>>> # for each track (track parameters)
+...
+>>> tmpfmt = ">I";struct.unpack(tmpfmt, x.read(struct.calcsize(tmpfmt))) # sample rate (24)
+(48000,)
+>>> x.read(4) # unknown, (25)
+b'\x00\x00\x00\x01'
+>>> tmpfmt = ">I";struct.unpack(tmpfmt, x.read(struct.calcsize(tmpfmt))) # track data size (26)
+(51017732,)
+>>> tmpfmt = ">c";struct.unpack(tmpfmt, x.read(struct.calcsize(tmpfmt))) # unknown (27)
+(b'\x10',)
+>>> tmpfmt = ">c";struct.unpack(tmpfmt, x.read(struct.calcsize(tmpfmt))) # number of channels (28)
+(b'\x02',)
+>>> x.read(2) # unknown (29)
+b'\x00\x00'
+>>> x.read(12) # unknown (30)
+b'\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
+>>> x.read(16) # unknown, some kind of signature? (31)
+b'\xd0\x1b\xd2\x175\x87N\xed\xb9\xd9\xb8\xe8n\xa9\xb9\x95'
+>>> x.read(4) # unknown (32)
+b'\xab\xab\xab\xab'
+>>> # for each track
+... x.read(16) # unknown, some kind of signature? (33)
+b'\x80 \xbf2\xdc\x08D\xf7\x85\x98s\xb27~QB'
+>>> # for each track (track names)
+... x.tell()
+292
+>>> _readCString(x)
+'SubStream0'
+>>> x.tell()
+303
+>>> 303 - 292
+11
+>>> x.read(5) # go to 16 byte boundary, track name (34)
+b'\xab\xab\xab\xab\xab'
+>>>
+>>> tmpfmt = "<I";struct.unpack(tmpfmt, x.read(struct.calcsize(tmpfmt))) # RWS chunk type (35)
+(2063,)
+>>> tmpfmt = "<I";struct.unpack(tmpfmt, x.read(struct.calcsize(tmpfmt))) # RWS data size (36)
+(54173696,)
+>>> tmpfmt = "<I";struct.unpack(tmpfmt, x.read(struct.calcsize(tmpfmt))) # RWS chunk version (37)
+(469893221,)
+
+
+
+IT SEEMS that the 'speech' rws files have additional information, mainly it seems to be expanded upon the '24 unknown bytes' that
+is between "stream name 1" and "data size"
+
+in XEN0.RWS, it seems to start out with a repeated pattern, starting immediately after the "stream name 1" padding and going for 1792 bytes
+so it now seems that each 'segment' has a 32 bytes of data
+
+0129EF28 0129F2C0 00000000 00C7E684
+00000000 00000000 00668800 00000000
+0129F3A0 0129F690 00000000 00C7E688
+00000000 00000000 00055000 00668800
+0129F770 0129FA60 00000000 00C7E68C
+00000000 00000000 00011000 006BD800
+0129FB40 0129FE30 00000000 00C7E690 
+00000000 00000000 0002A800 006CE800
+0129FF10 012A0200 00000000 00C7E694
+00000000 00000000 00055000 006F9000 
+012A02E0 012A05D0 etc etc etc etc etc
+
+like the first 32 bits seem to repeat, only incrementing, so 0129EF28, 0129F3A0, 0129F770, 0129FB40
+
+
+same with the second set of 32 bits and 4th set of 32 bits
+
+
+then we get to a section where it has strings, listing the name of the 'segments' i guess, which is supposed to be 'stream name 2' if we follow the format for the music RWS format
+
+there are 56 segments in XEN0.rws
+
+
+COMPARISON BETWEEN MUSIC RWS AND SPEECH RWS
+
+MUSIC RWS, from the stream name 1 to the 'segment0' (stream name 2)
+maxsize 54175743
+
+53747265 616D3000 ABABABAB ABABABAB < "stream0"
+
+0122FA98 0122FC48 00000000 01231DFC
+00000000 00000000 [033AA000] [00000000] < "data size" / " unknown"
+
+030A7804 D40C61B1 EE5E42C3 A0E12F68
+47008DEF [5365676D 656E7430 00ABABAB
+ABABABAB]  < "Segment0"
+
+
+
+SPEECH RWS (from stream name 1 to an arbitrary point)
+maxsize 21624832
+
+53747265 616D3000 ABABABAB ABABABAB < "stream0"
+
+0129EF28 0129F2C0 00000000 00C7E684
+00000000 00000000 00668800 00000000
+
+0129F3A0 0129F690 00000000 00C7E688
+00000000 00000000 00055000 00668800
+0129F770 0129FA60 00000000 00C7E68C
+00000000 00000000 00011000 006BD800
+0129FB40 0129FE30 00000000 00C7E690
+00000000 00000000 0002A800 006CE800
+0129FF10 012A0200 00000000 00C7E694
+00000000 00000000 00055000 006F9000
+012A02E0 012A05D0 00000000 00C7E698
+00000000 00000000 00044000 0074E000
+012A06B0 012A09A0 00000000 00C7E69C
+00000000 00000000 00044000 00792000
+012A0A80 012A0D70 00000000 00C7E6A0
+00000000 00000000 00033000 007D6000
+012A0E50 012A1140 00000000 00C7E6A4
+00000000 00000000 0003B800 00809000
+012A1220 012A1510 00000000 00C7E6A8
+00000000 00000000
+
+
+MORE DISCOVERIES:
+
+so basically right after 'stream name 1', we have 32 bytes per 'segment' before we get to some more information,
+and then the padded segment names
+
+but i also found out where we get the number of 'segments' in a rws file, its in the '36 unknown' bytes right after 'header size' and before 'number of tracks',
+
+SPEECH RWS
+'36 unknown bytes'
+00000014 00000010 00000024 00000007
+0129ED80 0129EC38 00000000 [00000038] < number of segments (56)
+00C7DF84
+
+
+MUSIC RWS
+
+'36 unknown bytes'
+00000014 00000010 00000024 00000007
+0122F858 0122FA50 00000000 [00000001] < number of segments (1)
+01231DDC
+
+
+so what are in these 32 byte segments?
+
+from the speech rws file:
+
+0129EF28 0129F2C0 00000000 00C7E684
+00000000 00000000 00668800 00000000
+
+another one:
+
+0129F3A0 0129F690 00000000 00C7E688
+00000000 00000000 00055000 00668800
+
+
+
+the number of bytes from the 32 bytes per segment section to the 'names' of the segments is 1120, divide that by 56 and.. 20 bytes per segment?
+
+
+there seems to be a 104 byte 'section' between the ending of the padding from the segment name strings to the start of the 'stream 2' string\
+
+so looking at the wiki
+
+    char {x}     - stream name 1 (zero-terminated, padded to 16 byte boundary)
+    uint32 {24}  - Unknown
+    uint32 {4}   - data size
+    uint32 {4}   - Unknown
+    // for each track
+
+        uint32 {4}   - Unknown
+
+    uint32 {16}  - some kind of signature?
+    char {x}     - stream name 2 (zero-terminated, padded to 16 byte boundary)
+
+
+in the Speech rws file, there is 1120 bytes between the end of the '32 bytes per segment" (the 'unknown', data size and unknown) and the start of stream name 2 listings. So, it says there are 4 bytes per track, so 4*56 = 224, and 16 * 56=896, and 896+224 = 1120! So it seems its not 4 bytes per TRACK, but 4 bytes per SEGMENT, we still don't know what they are 4 but at least it matches up now and i can finally figure out what the unaccounted bytes are for!
+
+
+random note: the header size (the start of the audio header chunk) starts after the header size number itself, and it seems to correspond to the very beginning of 'stream name 2's bytes in both files
+
+
+but after we get the stream name listings, it seems that the speech rws has the normal track organization and track parameters 
+information like the music rws files do.
