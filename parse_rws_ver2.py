@@ -387,6 +387,17 @@ def isDirectoryType(stringArg):
 
     return path
 
+def printTraceback():
+    '''prints the traceback'''
+
+    import traceback
+
+    # get variables for the method we are about to call
+    exc_type, exc_value, exc_traceback = sys.exc_info()
+
+    # print exception
+    traceback.print_exception(exc_type, exc_value, exc_traceback)
+
 if __name__ == "__main__":
     # if we are being run as a real program
 
@@ -402,5 +413,9 @@ if __name__ == "__main__":
 
     try:
         parseAndConvertRws(parser.parse_args())
-    except Exception as e:
-        sys.exit("Something went wrong! error: {}".format(e))
+    except Exception as e: 
+        print("Something went wrong...error: {}".format(e))
+        print("##################")
+        printTraceback()
+        print("##################")
+        sys.exit(1)
