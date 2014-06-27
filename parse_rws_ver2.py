@@ -6,7 +6,7 @@
 # written by Mark Grandi - Jun 4, 2014
 #
 
-import argparse, sys, struct, os, os.path, subprocess, tempfile, shutil
+import argparse, sys, struct, os, os.path, subprocess, tempfile, shutil, logging, pprint
 from enum import Enum
 from collections import namedtuple
 
@@ -81,6 +81,28 @@ named tuple that just holds the information in a RWS Chunk Header
 RWSChunkHeader = namedtuple("RWSChunkheader", ["chunkType", "chunkSize", "chunkVersion"])
 
 
+
+class RWSAudioHeaderSegment:
+
+    # # 24 bytes, 4 bytes, 4 bytes, 4 bytes, 16 bytes, C String padded to 16 bytes
+
+    def __init__(self):
+        self.unknown15 = None
+        self.dataSize = -1
+        self.unknown16 = None
+        self.unknown17 = None
+        self.unknown18 = None
+        self.segmentName = ""
+
+
+    def __str__(self):
+
+        return "<RWSAudioHeaderSegment:  dataSize: {}, segmentName: {} >".format(self.dataSize, self.segmentName)
+
+
+    def __repr__(self):
+        return str(self)
+
 class RWSAudioTrack:
     ''' class that holds track specific information'''
 
@@ -110,29 +132,35 @@ class RWSAudioHeader:
         self._fileStartPos = -1
 
         self.headerSize = -1
-        self.unknown1 = None
+        self.unknown1 = None # this used to be 36 bytes but now is 28 bytes
+        self.numSegments = -1 # this used to be bytes 28-32 of the old unknown1
+        self.unknown1Point5 = None # this used to be bytes 32-36 of the old unknown1
         self.numTracks = -1
 
         self.unknown2 = None
         self.unknown3 = None # some kind of signature?
         self.streamName1 = ""
-        self.unknown4 = None
-        self.dataSize = -1
-        self.unknown5 = None
 
-        # for each track
-        # self.unknown6Array = []
+        # REMOVED BECAUSE we now have a list of these, RWSAudioHeaderSegments
+        self.segments = []
 
-        self.unknown6 = None # some kind of signature?
-        self.streamName2 = ""
+        # self.unknown4 = None
+        # self.dataSize = -1
+        # self.unknown5 = None
+
+        # # for each track
+        # # self.unknown6Array = []
+
+        # self.unknown6 = None # some kind of signature?
+        # self.streamName2 = ""
 
         self.trackList = []
 
     def __str__(self):
         ''' tostring override'''
 
-        return "<RWSAudioHeader: headerSize: {}, numTracks: {}, streamName1: {}, streamName2: {}, dataSize: {}, trackList: {} >".format(
-            self.headerSize, self.numTracks, self.streamName1, self.streamName2, self.dataSize, self.trackList)
+        return "<RWSAudioHeader: headerSize: {}, numTracks: {}, streamName1: {}, segments: {}, trackList: {} >".format(
+            self.headerSize, self.numTracks, self.streamName1, self.segments, self.trackList)
 
     def __repr__(self):
         return str(self)
@@ -145,24 +173,65 @@ class RWSAudioHeader:
         self._fileStartPos = fileObj.tell()
 
         self.headerSize = _read(fileObj, ">I")[0] # RANDOMLY BIG ENDIAN??
-        self.unknown1 = fileObj.read(36)
+
+        # this is to support multiple segments 
+        self.unknown1 = fileObj.read(28)
+        self.numSegments = _read(fileObj, ">I")[0]
+        self.unknown1Point5 = fileObj.read(4)
+        ######################################
+
         self.numTracks = _read(fileObj, ">I")[0] # RANDOMLY BIG ENDIAN???
         self.unknown2 = fileObj.read(20)
         self.unknown3 = fileObj.read(16)
         self.streamName1 = _readRwsCString(fileObj)
 
-        self.unknown4 = fileObj.read(24)
-        self.dataSize = _read(fileObj, ">I")[0] # RANDOMLY BIG ENDIAN???
-        self.unknown5 = fileObj.read(4)
+        ###################
+        # NOW WE GO THROUGH EVERY SEGMENT WE HAVE AND CREATE A RWSAudioHeaderSegment
+        ###################
 
-        # now for each track, read 4 bytes of unknown data...
-        for i in range(self.numTracks):
-            fileObj.read(4)
+        for i in range(self.numSegments):
+
+            tmpSegment = RWSAudioHeaderSegment()
 
 
-        self.unknown6 = fileObj.read(16)
+            tmpSegment.unknown15 = fileObj.read(24)
+            tmpSegment.dataSize = _read(fileObj, ">I")[0]
+            tmpSegment.unknown16 = fileObj.read(4)
+            tmpSegment.unknown17 = fileObj.read(4)
+            #tmpSegment.unknown18 = fileObj.read(16)
+            #tmpSegment.segmentName = ""
 
-        self.streamName2 = _readRwsCString(fileObj)
+            self.segments.append(tmpSegment)
+
+
+        for i in range(self.numSegments):
+
+            tmpSegment = self.segments[i]
+
+            tmpSegment.unknown18 = fileObj.read(16)
+
+        for i in range(self.numSegments):
+
+            tmpSegment = self.segments[i]
+
+            tmpSegment.segmentName = _readRwsCString(fileObj)
+
+        ###################
+
+        logging.debug("segments: {}".format(pprint.pformat(self.segments)))
+
+        # self.unknown4 = fileObj.read(24)
+        # self.dataSize = _read(fileObj, ">I")[0] # RANDOMLY BIG ENDIAN???
+        # self.unknown5 = fileObj.read(4)
+
+        # # now for each track, read 4 bytes of unknown data...
+        # for i in range(self.numTracks):
+        #     fileObj.read(4)
+
+
+        # self.unknown6 = fileObj.read(16)
+
+        # self.streamName2 = _readRwsCString(fileObj)
 
         # now for each track, create a RWSAudioTrack object for later
         for i in range(self.numTracks):
@@ -242,6 +311,12 @@ def parseAndConvertRws(args):
     @param args - the namespace object we get from argparse.parse_args()
     '''
 
+    level = logging.WARNING
+    if args.verbose:
+        level = logging.DEBUG
+
+    logging.basicConfig(level=level)
+
     # recurse and find .rws files
     filesToProcess = list()
 
@@ -253,12 +328,13 @@ def parseAndConvertRws(args):
                 filesToProcess.append(os.path.join(dirpath, iterFileName))
 
 
+    logging.debug("List of files to process: {}".format(filesToProcess))
 
     # go through each rws file and convert it
 
     tempdir = tempfile.TemporaryDirectory()
 
-    print("Temporary directory is {}".format(tempdir.name))
+    logging.debug("Temporary directory is {}".format(tempdir.name))
 
     counter = 1
     for iterFile in filesToProcess:
@@ -273,11 +349,11 @@ def parseAndConvertRws(args):
             # read the 'container' chunk header
             initalHeader = _readChunkHeader(f)
 
-            #print("chunk Container header: {}".format(initalHeader))
+            logging.debug("chunk Container header: {}".format(initalHeader))
 
             # then read the audio header:
             audioChunkHeader = _readChunkHeader(f)
-            #print("chunk audio header: {}".format(audioChunkHeader))
+            logging.debug("chunk audio header: {}".format(audioChunkHeader))
 
             # read the audio header that has stuff like number of tracks, organization, parameters, etc
             audioHeader = RWSAudioHeader()
@@ -291,12 +367,12 @@ def parseAndConvertRws(args):
             needToRead = audioChunkHeader.chunkSize - (f.tell() - audioHeader._fileStartPos)
             f.read(needToRead)
 
-            #print("audio header: {}".format(audioHeader))
+            logging.debug("audio header: {}".format(pprint.pformat(audioHeader)))
 
             # read the audio data chunk header
 
             audioDataChunkHeader = _readChunkHeader(f)
-            #print("audio data chunk header: {}".format(audioDataChunkHeader))
+            logging.debug("audio data chunk header: {}".format(pprint.pformat(audioDataChunkHeader)))
 
 
             # now read up to audioDataChunkHeader.chunkSize bytes and get the audio data
@@ -338,14 +414,17 @@ def parseAndConvertRws(args):
                         outputPcm = os.path.join(args.outputFolder, os.path.splitext(filename)[0] + ".pcm")
 
                         shutil.copyfile(pcmFilePath, outputPcm)
-                        print("finished {}: raw pcm copied to {}".format(filename, outputPcm))
+                        logging.info("finished {}: raw pcm copied to {}".format(filename, outputPcm))
 
                 else:
                     # convert as normal
                     outputFile = os.path.join(args.outputFolder, os.path.splitext(filename)[0] + ".flac")
 
-                    argList = ["ffmpeg", "-f", "s16be", "-ar", "48000", "-ac", "2", "-i", pcmFilePath, 
-                        "-codec", "flac", "-compression_level", "8", "-y", outputFile]
+                    argList = ["ffmpeg", "-f", "s16be", "-ar", str(tmpTrack.trackParameters.sampleRate), "-ac", 
+                        str(tmpTrack.trackParameters.numChannels), "-i", pcmFilePath, "-codec", "flac", 
+                        "-compression_level", "8", "-y", outputFile]
+
+                    logging.debug("ffmpeg arguments: {}".format(pprint.pformat(argList)))
 
                     # TODO manually coding in 48000 sample rate, 2 channels, etc instead of using data from file format
                     try:
@@ -353,11 +432,11 @@ def parseAndConvertRws(args):
                     except subprocess.CalledProcessError as e:
                         sys.exit('''Error calling ffmpeg on file {} !\n\nGot return code {}, while running command: \n'{}'\n\noutput:\n################\n{}\n################'''
                             .format(filename, e.returncode, " ".join(e.cmd), e.output))
-                    print("({}/{}) {}: converted and saved to {}".format(counter, len(filesToProcess), filename, outputFile))  
+                    logging.info("({}/{}) {}: converted and saved to {}".format(counter, len(filesToProcess), filename, outputFile))  
 
         counter += 1
 
-    print("finished")
+    logging.info("finished")
 
 
 
@@ -387,6 +466,17 @@ def isDirectoryType(stringArg):
 
     return path
 
+def printTraceback():
+    '''prints the traceback'''
+
+    import traceback
+
+    # get variables for the method we are about to call
+    exc_type, exc_value, exc_traceback = sys.exc_info()
+
+    # print exception
+    traceback.print_exception(exc_type, exc_value, exc_traceback)
+
 if __name__ == "__main__":
     # if we are being run as a real program
 
@@ -398,9 +488,14 @@ if __name__ == "__main__":
     parser.add_argument("outputFolder", help="the folder where we output the flac files")
     parser.add_argument("--justDumpRaw", action="store_true", help="if set then we will just dump the raw .pcm files to "
         "outputFolder and not run them through ffmpeg")
+    parser.add_argument("--verbose", action="store_true", help="increase verbosity")
 
 
     try:
         parseAndConvertRws(parser.parse_args())
-    except Exception as e:
-        sys.exit("Something went wrong! error: {}".format(e))
+    except Exception as e: 
+        print("Something went wrong...error: {}".format(e))
+        print("##################")
+        printTraceback()
+        print("##################")
+        sys.exit(1)
