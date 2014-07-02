@@ -194,11 +194,22 @@ class RWSAudioHeader:
             tmpSegment = RWSAudioHeaderSegment()
 
 
-            tmpSegment.unknown15 = fileObj.read(24)
+            # TESTING: to see what the first two bytes of these '32' bytes mean
+            tmpOne = _read(fileObj, ">I")[0]
+            tmpTwo = _read(fileObj, ">I")[0]
+            fileObj.read(16)
+
+
+            logging.debug("TESTING: {} - {} = {}".format(tmpTwo, tmpOne, tmpTwo - tmpOne))
+            #tmpSegment.unknown15 = fileObj.read(24)
+
+
+            ###################
+
             tmpSegment.dataSize = _read(fileObj, ">I")[0]
             tmpSegment.unknown16 = fileObj.read(4)
-            tmpSegment.unknown17 = fileObj.read(4)
-            #tmpSegment.unknown18 = fileObj.read(16)
+            #tmpSegment.unknown17 = fileObj.read(4) # THESE ARE NO LONGER NEEDED ???
+            #tmpSegment.unknown18 = fileObj.read(16) # THESE ARE NO LONGER NEEDED?
             #tmpSegment.segmentName = ""
 
             self.segments.append(tmpSegment)
@@ -208,7 +219,7 @@ class RWSAudioHeader:
 
             tmpSegment = self.segments[i]
 
-            tmpSegment.unknown18 = fileObj.read(16)
+            tmpSegment.unknown18 = fileObj.read(20)
 
         for i in range(self.numSegments):
 
@@ -386,15 +397,27 @@ def parseAndConvertRws(args):
             realDataSize = tmpTrack.trackOrganization.bytesUsedPerCluster
             wasteSize = tmpTrack.trackOrganization.clusterSize - tmpTrack.trackOrganization.bytesUsedPerCluster
 
+
+            logging.debug("###################")
+            logging.debug("realDataSize: {}".format(realDataSize))
+            logging.debug("wasteSize: {}".format(wasteSize))
+            logging.debug("starting at file pos: {}".format(f.tell()))
+
+            tmplimit = 34
+            tmpcounter = 0
             with open(pcmFilePath, "wb") as f2:
 
                 # loop and write data to the pcm file, skipping over the waste in the clusters
                 while True:
+                    if tmpcounter >= tmplimit:
+                        break
                     # real audio data
                     #print("reading {} bytes (pos {})".format(realDataSize, f.tell()))
                     tmp = f.read(realDataSize)
+                    logging.debug("\tRead {} bytes (real data), now at {}".format(realDataSize, f.tell()))
 
                     if tmp == None or len(tmp) == 0:
+                        logging.debug("\tBreaking, got None or 0 bytes at file pos {}".format(f.tell()))
                         break
 
                     # write to output file
@@ -404,6 +427,8 @@ def parseAndConvertRws(args):
                     # skip waste
                     #print("reading {} waste bytes (pos {})".format(wasteSize, f.tell()))
                     f.read(wasteSize)
+                    logging.debug("\tRead {} bytes (waste), now at {}".format(wasteSize, f.tell()))
+                    tmpcounter += 1
 
                 # write a dummmy null byte?
                 f2.write(b'\x00')
