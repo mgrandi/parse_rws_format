@@ -322,7 +322,7 @@ def parseAndConvertRws(args):
     @param args - the namespace object we get from argparse.parse_args()
     '''
 
-    level = logging.WARNING
+    level = logging.INFO
     if args.verbose:
         level = logging.DEBUG
 
@@ -330,36 +330,30 @@ def parseAndConvertRws(args):
 
     # recurse and find .rws files
     filesToProcess = list()
-
     for dirpath, dirnames, filenames in os.walk(args.rwsFolder):
-
         for iterFileName in filenames:
 
             if os.path.splitext(iterFileName)[1].lower() == ".rws":
                 filesToProcess.append(os.path.join(dirpath, iterFileName))
 
 
-    logging.debug("List of files to process: {}".format(filesToProcess))
+    logging.debug("List of files to process: {}".format(pprint.pformat(filesToProcess)))
 
     # go through each rws file and convert it
 
     tempdir = tempfile.TemporaryDirectory()
-
     logging.debug("Temporary directory is {}".format(tempdir.name))
 
     counter = 1
     for iterFile in filesToProcess:
 
+        logging.info("{}/{} - Processing file '{}'".format(counter, len(filesToProcess), iterFile))
+
         # open the file
-        with open(iterFile, "rb") as f:
-
-            filename = os.path.split(iterFile)[1]
-
-            pcmFilePath = os.path.join(tempdir.name, os.path.splitext(filename)[0] + ".pcm")
+        with open(iterFile, "rb") as f:            
 
             # read the 'container' chunk header
             initalHeader = _readChunkHeader(f)
-
             logging.debug("chunk Container header: {}".format(initalHeader))
 
             # then read the audio header:
@@ -374,14 +368,12 @@ def parseAndConvertRws(args):
             # Audio header is placed in. in the RWSAudioHeader object we recorded the file position
             # when we started reading, so we just need to make sure that the file position is
             # audioChunkHeader.chunkSize bytes from the _fileStartPos variable in audioHeader
-
             needToRead = audioChunkHeader.chunkSize - (f.tell() - audioHeader._fileStartPos)
             f.read(needToRead)
 
             logging.debug("audio header: {}".format(pprint.pformat(audioHeader)))
 
             # read the audio data chunk header
-
             audioDataChunkHeader = _readChunkHeader(f)
             logging.debug("audio data chunk header: {}".format(pprint.pformat(audioDataChunkHeader)))
 
@@ -402,95 +394,112 @@ def parseAndConvertRws(args):
             logging.debug("realDataSize: {}".format(realDataSize))
             logging.debug("wasteSize: {}".format(wasteSize))
             logging.debug("starting at file pos: {}".format(f.tell()))
+            logging.debug("###################")
+
 
             # tmpStart = 0
             # tmplimit = 205
-            limit = 6719488 + 348160 + 69632 + 174080 + 348160
-            tmpcounter = 0
-            dataCounter = 0
-            shouldDie = False
-            with open(pcmFilePath, "wb") as f2:
 
-                # loop and write data to the pcm file, skipping over the waste in the clusters
-                while True:
-                    if shouldDie:
-                        break
-                    logging.debug("Counter is at: {}".format(tmpcounter))
+            segmentCounter = 1
+            logging.info("\tThis track has {} segments".format(len(audioHeader.segments)))
 
+            for iterSegment in audioHeader.segments:
 
-                    # real audio data
-                    #print("reading {} bytes (pos {})".format(realDataSize, f.tell()))
-                    tmp = f.read(realDataSize)
+                logging.info("\t\t{}/{} Processing segment: '{}'".format(segmentCounter, len(audioHeader.segments), iterSegment.segmentName))
 
+                # get the path to the temporary file we will be saving the pcm as
+                filename = os.path.splitext(os.path.split(iterFile)[1])[0] + "_{}".format(iterSegment.segmentName)
+                pcmFilePath = os.path.join(tempdir.name, filename  + ".pcm")
 
-                    if tmp == None or len(tmp) == 0:
-                        logging.debug("\tBreaking, got None or 0 bytes at file pos {}".format(f.tell()))
-                        break
+                # limit = 6719488 + 348160 + 69632 + 174080 + 348160
+                # tmpcounter = 0
+                dataCounter = 0
+                #shouldDie = False
+                with open(pcmFilePath, "wb") as f2:
 
-                    logging.debug("\tRead {} bytes (real data), now at {}".format(len(tmp), f.tell()))
-                    dataCounter += len(tmp)
-                    logging.debug("\t\tData read so far: {}".format(dataCounter))
+                    # loop and write data to the pcm file, skipping over the waste in the clusters
+                    while True:
+                        # if shouldDie:
+                        #     break
+                        # #logging.debug("Counter is at: {}".format(tmpcounter))
 
 
-                        
-
-                    # write to output file
-                    #print("writing {} bytes to output file, f2 pos: {}\n\n".format(len(tmp), f2.tell()))
-                    # if tmpcounter > tmpStart and tmpcounter <= tmplimit:
-                    #     f2.write(tmp)
+                        # real audio data
+                        #print("reading {} bytes (pos {})".format(realDataSize, f.tell()))
+                        tmp = f.read(realDataSize)
 
 
-                    # skip waste
-                    #print("reading {} waste bytes (pos {})".format(wasteSize, f.tell()))
-                    f.read(wasteSize)
-                    dataCounter += wasteSize
-                    logging.debug("\tRead {} bytes (waste), dataCounter: {}, filepos now at {}".format(wasteSize, dataCounter, f.tell()))
-                    tmpcounter += 1
+                        if tmp == None or len(tmp) == 0:
+                            logging.error("Unexpected end of file!, got None or 0 bytes at file pos {}".format(f.tell()))
+                            break
 
-                    if dataCounter <= limit:
-                        f2.write(tmp)
+                        logging.debug("\t\t\tRead {} bytes (real data), now at {}".format(len(tmp), f.tell()))
+                        dataCounter += len(tmp)
+                        logging.debug("\t\t\tData read so far: {}".format(dataCounter))
 
-                        if dataCounter == limit:
-                            logging.debug("\tENDED ON EVEN")
+
+                            
+
+                        # write to output file
+                        #print("writing {} bytes to output file, f2 pos: {}\n\n".format(len(tmp), f2.tell()))
+                        # if tmpcounter > tmpStart and tmpcounter <= tmplimit:
+                        #     f2.write(tmp)
+
+
+                        # skip waste
+                        #print("reading {} waste bytes (pos {})".format(wasteSize, f.tell()))
+                        f.read(wasteSize)
+                        dataCounter += wasteSize
+                        logging.debug("\t\t\tRead {} bytes (waste), dataCounter: {}, filepos now at {}".format(wasteSize, dataCounter, f.tell()))
+
+                        if dataCounter <= iterSegment.dataSize:
+                            f2.write(tmp)
+
+                            if dataCounter == iterSegment.dataSize:
+                                logging.debug("\t\t\tENDED ON EVEN")
+                                break
+
+                        else:
+                            onlyWrite = dataCounter - iterSegment.dataSize
+                            logging.error("\t\t\tDIDN'T END ON EVEN: onlyWrite: {}".format(onlyWrite))
+                            f2.write(tmp[:onlyWrite])
                             shouldDie = True
 
+                    # write a dummmy null byte?
+                    f2.write(b'\x00')
+
+                    if args.justDumpRaw:
+
+                            # we are not converting, just dumping the raw pcm file 
+                            outputPcm = os.path.join(args.outputFolder, filename + ".pcm")
+
+                            shutil.copyfile(pcmFilePath, outputPcm)
+                            logging.info("\t\t\tfinished {}: raw pcm copied to {}".format(filename, outputPcm))
+
                     else:
-                        onlyWrite = dataCounter - limit
-                        logging.debug("\tDIDN'T END ON EVEN: onlyWrite: {}".format(onlyWrite))
-                        f2.write(tmp[:onlyWrite])
-                        shouldDie = True
+                        # convert as normal
+                        outputFile = os.path.join(args.outputFolder, filename + ".flac")
 
-                # write a dummmy null byte?
-                f2.write(b'\x00')
+                        argList = ["ffmpeg", "-f", "s16be", "-ar", str(tmpTrack.trackParameters.sampleRate), "-ac", 
+                            str(tmpTrack.trackParameters.numChannels), "-i", pcmFilePath, "-codec", "flac", 
+                            "-compression_level", "8", "-y", outputFile]
 
-                if args.justDumpRaw:
+                        logging.debug("ffmpeg arguments: {}".format(pprint.pformat(argList)))
 
-                        # we are not converting, just dumping the raw pcm file 
-                        outputPcm = os.path.join(args.outputFolder, os.path.splitext(filename)[0] + ".pcm")
+                        # TODO manually coding in 48000 sample rate, 2 channels, etc instead of using data from file format
+                        try:
+                            subprocess.check_output(argList, stderr=subprocess.STDOUT, universal_newlines=True)
+                        except subprocess.CalledProcessError as e:
+                            sys.exit('''Error calling ffmpeg on file {} !\n\nGot return code {}, while running command: \n'{}'\n\noutput:\n################\n{}\n################'''
+                                .format(filename, e.returncode, " ".join(e.cmd), e.output))
+                        logging.info("\t\t\t{}: converted and saved to {}".format(filename, outputFile))  
 
-                        shutil.copyfile(pcmFilePath, outputPcm)
-                        logging.info("finished {}: raw pcm copied to {}".format(filename, outputPcm))
-
-                else:
-                    # convert as normal
-                    outputFile = os.path.join(args.outputFolder, os.path.splitext(filename)[0] + ".flac")
-
-                    argList = ["ffmpeg", "-f", "s16be", "-ar", str(tmpTrack.trackParameters.sampleRate), "-ac", 
-                        str(tmpTrack.trackParameters.numChannels), "-i", pcmFilePath, "-codec", "flac", 
-                        "-compression_level", "8", "-y", outputFile]
-
-                    logging.debug("ffmpeg arguments: {}".format(pprint.pformat(argList)))
-
-                    # TODO manually coding in 48000 sample rate, 2 channels, etc instead of using data from file format
-                    try:
-                        subprocess.check_output(argList, stderr=subprocess.STDOUT, universal_newlines=True)
-                    except subprocess.CalledProcessError as e:
-                        sys.exit('''Error calling ffmpeg on file {} !\n\nGot return code {}, while running command: \n'{}'\n\noutput:\n################\n{}\n################'''
-                            .format(filename, e.returncode, " ".join(e.cmd), e.output))
-                    logging.info("({}/{}) {}: converted and saved to {}".format(counter, len(filesToProcess), filename, outputFile))  
-
+                segmentCounter += 1
+        counter += 1
 
     logging.info("finished")
+    # make sure to cleanup the temporary directory
+    tempdir.cleanup()
 
 
 
