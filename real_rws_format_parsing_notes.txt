@@ -413,3 +413,10 @@ doing this allowed me to uncover a bug, where i was reading 36 bytes per segment
 
 this allows me to actually have sensible 'data sizes' rather then some that are huge and some that are 0! 
 
+
+###################
+
+ok, so i figured out that the data sizes, is the number of bytes, starting from where we are reading the audio data, (counting from 0), including BOTH the audio data and the waste size, how big each segment is. I found that counting the waste size and not just the audio data makes it end on exactly the number that we get in the RWSAudioHeaderSegment's dataSize variable. 
+
+
+

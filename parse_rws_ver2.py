@@ -403,32 +403,62 @@ def parseAndConvertRws(args):
             logging.debug("wasteSize: {}".format(wasteSize))
             logging.debug("starting at file pos: {}".format(f.tell()))
 
-            tmplimit = 34
+            # tmpStart = 0
+            # tmplimit = 205
+            limit = 6719488 + 348160 + 69632 + 174080 + 348160
             tmpcounter = 0
+            dataCounter = 0
+            shouldDie = False
             with open(pcmFilePath, "wb") as f2:
 
                 # loop and write data to the pcm file, skipping over the waste in the clusters
                 while True:
-                    if tmpcounter >= tmplimit:
+                    if shouldDie:
                         break
+                    logging.debug("Counter is at: {}".format(tmpcounter))
+
+
                     # real audio data
                     #print("reading {} bytes (pos {})".format(realDataSize, f.tell()))
                     tmp = f.read(realDataSize)
-                    logging.debug("\tRead {} bytes (real data), now at {}".format(realDataSize, f.tell()))
+
 
                     if tmp == None or len(tmp) == 0:
                         logging.debug("\tBreaking, got None or 0 bytes at file pos {}".format(f.tell()))
                         break
 
+                    logging.debug("\tRead {} bytes (real data), now at {}".format(len(tmp), f.tell()))
+                    dataCounter += len(tmp)
+                    logging.debug("\t\tData read so far: {}".format(dataCounter))
+
+
+                        
+
                     # write to output file
                     #print("writing {} bytes to output file, f2 pos: {}\n\n".format(len(tmp), f2.tell()))
-                    f2.write(tmp)
+                    # if tmpcounter > tmpStart and tmpcounter <= tmplimit:
+                    #     f2.write(tmp)
+
 
                     # skip waste
                     #print("reading {} waste bytes (pos {})".format(wasteSize, f.tell()))
                     f.read(wasteSize)
-                    logging.debug("\tRead {} bytes (waste), now at {}".format(wasteSize, f.tell()))
+                    dataCounter += wasteSize
+                    logging.debug("\tRead {} bytes (waste), dataCounter: {}, filepos now at {}".format(wasteSize, dataCounter, f.tell()))
                     tmpcounter += 1
+
+                    if dataCounter <= limit:
+                        f2.write(tmp)
+
+                        if dataCounter == limit:
+                            logging.debug("\tENDED ON EVEN")
+                            shouldDie = True
+
+                    else:
+                        onlyWrite = dataCounter - limit
+                        logging.debug("\tDIDN'T END ON EVEN: onlyWrite: {}".format(onlyWrite))
+                        f2.write(tmp[:onlyWrite])
+                        shouldDie = True
 
                 # write a dummmy null byte?
                 f2.write(b'\x00')
@@ -459,7 +489,6 @@ def parseAndConvertRws(args):
                             .format(filename, e.returncode, " ".join(e.cmd), e.output))
                     logging.info("({}/{}) {}: converted and saved to {}".format(counter, len(filesToProcess), filename, outputFile))  
 
-        counter += 1
 
     logging.info("finished")
 
