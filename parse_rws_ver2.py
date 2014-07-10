@@ -10,14 +10,24 @@ import argparse, sys, struct, os, os.path, subprocess, tempfile, shutil, logging
 from enum import Enum
 from collections import namedtuple
 
-def _read(fileObj, formatStr):
+ENDIANNESS = ">" # big endian to start out with
+
+def _read(fileObj, formatStr, overrideEndian=None):
     ''' helper to use struct.unpack() to read data, returns what struct.unpack returns, aka a tuple
 
     @param fileObj - the file obj to read from
     @param formatStr - the format string passed to unpack()
+    @param overrideEndian - by default we use the ENDIANNESS global variable to tell what endian we use
+        but if overrideEndian is use, we use that instead of the ENDIANNESS variable
     '''
 
-    return struct.unpack(formatStr, fileObj.read(struct.calcsize(formatStr)))
+    tmpstr = ""
+    if not overrideEndian:
+        tmpstr = "{}{}".format(ENDIANNESS,formatStr)
+    else:
+        tmpstr = "{}{}".format(overrideEndian,formatStr)
+
+    return struct.unpack(tmpstr, fileObj.read(struct.calcsize(tmpstr)))
 
 def _readRwsCString(fileObj):
     ''' this reads a null terminated string , but for some reason these
@@ -172,15 +182,30 @@ class RWSAudioHeader:
 
         self._fileStartPos = fileObj.tell()
 
-        self.headerSize = _read(fileObj, ">I")[0] # RANDOMLY BIG ENDIAN??
+        fileSizeInBytes = os.stat(fileObj.fileno()).st_size
+
+        self.headerSize = _read(fileObj, "I")[0] # RANDOMLY BIG ENDIAN??
+
+        logging.debug("Do we switch to little endian? headerSize: {} , fileSize: {}".format(self.headerSize, fileSizeInBytes))
+        if self.headerSize > fileSizeInBytes:
+            # the endianness is wrong, switch
+            # we start out as big endianness so here we switch to little
+            logging.debug("\tyes! self.headerSize ({}) > fileSizeInBytes ({}) so its probably not big endian, switching to little endian!".format(self.headerSize, fileSizeInBytes))
+            global ENDIANNESS
+            ENDIANNESS = "<"
+            fileObj.seek(self._fileStartPos)
+            self.headerSize = _read(fileObj, "I")[0]
+        else:
+            logging.debug("\tno, keeping big endian")
+
 
         # this is to support multiple segments 
         self.unknown1 = fileObj.read(28)
-        self.numSegments = _read(fileObj, ">I")[0]
+        self.numSegments = _read(fileObj, "I")[0]
         self.unknown1Point5 = fileObj.read(4)
         ######################################
 
-        self.numTracks = _read(fileObj, ">I")[0] # RANDOMLY BIG ENDIAN???
+        self.numTracks = _read(fileObj, "I")[0] # RANDOMLY BIG ENDIAN???
         self.unknown2 = fileObj.read(20)
         self.unknown3 = fileObj.read(16)
         self.streamName1 = _readRwsCString(fileObj)
@@ -195,18 +220,18 @@ class RWSAudioHeader:
 
 
             # TESTING: to see what the first two bytes of these '32' bytes mean
-            tmpOne = _read(fileObj, ">I")[0]
-            tmpTwo = _read(fileObj, ">I")[0]
+            tmpOne = _read(fileObj, "I")[0]
+            tmpTwo = _read(fileObj, "I")[0]
             fileObj.read(16)
 
 
-            logging.debug("TESTING: {} - {} = {}".format(tmpTwo, tmpOne, tmpTwo - tmpOne))
+            #logging.debug("TESTING: {} - {} = {}".format(tmpTwo, tmpOne, tmpTwo - tmpOne))
             #tmpSegment.unknown15 = fileObj.read(24)
 
 
             ###################
 
-            tmpSegment.dataSize = _read(fileObj, ">I")[0]
+            tmpSegment.dataSize = _read(fileObj, "I")[0]
             tmpSegment.unknown16 = fileObj.read(4)
             #tmpSegment.unknown17 = fileObj.read(4) # THESE ARE NO LONGER NEEDED ???
             #tmpSegment.unknown18 = fileObj.read(16) # THESE ARE NO LONGER NEEDED?
@@ -255,10 +280,10 @@ class RWSAudioHeader:
             iterTrack = self.trackList[i]
 
             _unknown7 = fileObj.read(16)
-            _clusterSize = _read(fileObj, ">I")[0]
+            _clusterSize = _read(fileObj, "I")[0]
             _unknown8 = fileObj.read(12)
-            _bytesUsedPerCluster = _read(fileObj, ">I")[0]
-            _trackStartOffset = _read(fileObj, ">I")[0]
+            _bytesUsedPerCluster = _read(fileObj, "I")[0]
+            _trackStartOffset = _read(fileObj, "I")[0]
 
             iterTrack.trackOrganization = TrackOrganization(_unknown7, _clusterSize, 
                 _unknown8, _bytesUsedPerCluster, _trackStartOffset)
@@ -269,11 +294,11 @@ class RWSAudioHeader:
 
             iterTrack = self.trackList[i]
 
-            _sRate = _read(fileObj, ">I")[0]
+            _sRate = _read(fileObj, "I")[0]
             _u9 = fileObj.read(4)
-            _tDataSize = _read(fileObj, ">I")[0]
+            _tDataSize = _read(fileObj, "I")[0]
             _u10 = fileObj.read(1)
-            _nChannels = _read(fileObj, ">B")[0]
+            _nChannels = _read(fileObj, "B")[0]
             _u11 = fileObj.read(2)
             _u12 = fileObj.read(12)
             _u13 = fileObj.read(16)
@@ -297,10 +322,12 @@ class RWSAudioHeader:
 def _readChunkHeader(fileObj):
     ''' reads the chunk header and returns a RWSChunkHeader object
 
+    these are always little endian
+
     @param fileObj - the file object to read from
     '''
 
-    tmpType = _read(fileObj, "<I")
+    tmpType = _read(fileObj, "I", "<")
 
     # see if its a valid chunk type
     chunkType = None
@@ -312,8 +339,8 @@ def _readChunkHeader(fileObj):
             .format(fileObj.tell() - struct.calcsize("<I"), tmpType[0]))
 
     # read size and version now
-    tmpSize = _read(fileObj, "<I")
-    tmpVer = _read(fileObj, "<I")
+    tmpSize = _read(fileObj, "I", "<")
+    tmpVer = _read(fileObj, "I", "<")
 
     return RWSChunkHeader(chunkType, tmpSize[0], tmpVer[0])
 
