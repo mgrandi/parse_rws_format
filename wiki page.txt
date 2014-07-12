@@ -1,0 +1,222 @@
+{{GRAFPageHeader}}
+
+
+== RWS ==
+{{GRAFPageMisc|Audio|Mixed Endianness}}
+
+=== General Information ===
+
+RWS, which stands for RenderWare Stream, is an audio format used by several games, that presumably also use the [https://en.wikipedia.org/wiki/RenderWare RenderWare] engine. RenderWare is a cross platform engine, so these audio files can theoretically be present on multiple platforms, from Mac/Windows, Xbox, Xbox 360, PS2, PS3, PSP, Gamecube and the Wii. Apparently this engine is no longer available to purchase, so this engine might be retired from use. This page explains the format of the audio files, given the extension .RWS, instead of other engine components such as models or textures, etc. 
+
+The format details on this page are listed in this type of format: "uint32 (4) some description here". This means that that is a 32 bit signed integer, and that takes up 4 bytes. The bytes are listed as sometimes there is unknown data that takes up X amount of bytes, and we just want to skip it, and also for convienence. 
+
+
+=== Format Specifications ===
+
+The first thing to mention about this format is while the structure is more or less the same, certain key things about it differ depending on the video game its being used in, the console the game is for, and the developers themselves. You may of noticed that this format is tagged is "Mixed Endianness", that is because the endianness of the format depends on the console its being run on (at least to the best of my knowledge). For example, Most PCs, or the processors they run are little endian machines, therefore a PC game that uses RWS/RenderWare uses little endian. However, for a Xbox 360 game, whose processor is actually big endian, the RWS format is big endian as well. 
+
+The actual audio data inside of the RWS file also differs from game to game, and while this document will explain the structure of the RWS format that should match for any game that uses it, the audio data is most likely going to differ from game to game, and will probably be in a separate article. 
+
+==== Version Numbers ====
+
+The RWS format has a version number that is part of a 'chunk' (explained later), that appears to be the same for every chunk in the file, but is different for each game. The known version numbers for each game that uses it are listed below:
+
+* Broken Sword 3 - The Sleeping Dragon (PC) (Little Endian): {{Constant|0x1803FFFF}} or  {{Constant|402915327}}<sub>dec</sub>
+* The Legend of Spyro - Dawn of the Dragon (Xbox 360) (Big Endian): {{Constant|0x1C020065}} or {{Constant|469893221}}<sub>dec</sub>
+
+
+==== Strings ====
+
+Strings in the RWS format are NULL terminated utf-8 character arrys, but they are padded to a 16 byte boundary, possibly to keep things aligned properly and or to load strings directly into memory without scanning for a NULL byte. After the NULL byte, the rest of the data until you hit 16 bytes is usually garbage / filler. In one game, it just filled it with 0xAB bytes (which makes it easy to spot its garbage as compilers often use this value as 'filler' see [http://stackoverflow.com/a/370362/975046] , and another game seemed like random garbage data. No strings have been encountered that are greater then 16 bytes, but they may exist as its unknown if there is a hard limit on strings in this format. 
+
+Sample code to read these strings is as follows (in python 3):
+
+<syntaxhighlight lang="python">
+def _readRwsCString(fileObj):
+    ''' this reads a null terminated string , but for some reason these
+    are padded to 16 bytes with 0xAB or garbage characters.... so this advances the file's
+    pointer to the correct spot. This also handles strings that are greater than 16 bytes 
+    long even though its unknown if any RWS C strings exist that are greater then 16 bytes.
+
+    @param fileObj - The file like object we are reading from
+    @return a string'''
+
+    startPos = fileObj.tell()
+    # need to read bytes until we get null byte cause this is a null
+    # terminated c string
+    stringBuffer = bytearray()
+    while True:
+
+        tmp = fileObj.read(1) # read one byte
+        if tmp is not None and len(tmp) != 0:
+
+            if tmp != b'\x00': # see if its a NULL byte
+                stringBuffer += tmp
+            else:
+                # found the null terminator
+                # but we need to read up to a 16 byte padding boundary
+                endPos = fileObj.tell()
+                remainingChars = 16 - ((endPos - startPos) % 16)
+                fileObj.read(remainingChars)
+
+                # now we can return the string 
+                return stringBuffer.decode("utf-8")
+
+        else:
+            # unexpected end of file?
+            sys.exit("unexpected end of file in _readRwsCString(), file position is at {}".format(fileObj.tell()))
+
+</syntaxhighlight>
+
+
+==== RWS Chunks ====
+
+A RWS file is split up into chunks, of which there are 3 types and in every file encountered there has been exactly 1 of each type. 
+
+
+===== Chunk Types Magic Numbers =====
+
+The magic numbers that represent the chunk types are:
+
+* <tt>0x0000080d</tt> - audio container
+* <tt>0x0000080e</tt> - audio header
+* <tt>0x0000080f</tt> - audio data
+
+Every type of chunk starts with a "chunk header", which for all types contain the same pieces of information:
+
+* '''uint32 ({{Red|4}})''' - The chunk type (see [[#Chunk Types Magic Numbers| Chunk Types Magic Numbers]])
+* '''uint32 ({{Red|4}})''' - The chunk data size (how big this chunk is AFTER the 12 bytes of the chunk header)
+* '''uint32 ({{Red|4}})''' - The Chunk Version (see [[#Version Numbers| Version Numbers]])
+
+Note that these are '''ALWAYS LITTLE ENDIAN''', even if the rest of the format is big endian!
+
+===== Audio Container Chunk =====
+
+This chunk essentially contains everything in the file. Contains one Audio Header chunk and one Audio Data chunk.
+
+===== Audio Header Chunk =====
+
+This chunk contains information about how to extract / play the audio data contained in this file. 
+
+* '''uint32 ({{Red|4}})'''  - Header size (how big the 'header' is INCLUDING these 4 bytes, not related to the chunk's data size, although they end at the same spot)
+* '''unknown ({{Red|28}})''' - Unknown data
+* '''uint32 ({{Red|4}})'''  - Number of segments (in a track? in all tracks?)
+* '''unknown ({{Red|4}})''' - Unknown data
+* '''uint32 ({{Red|4}})''' - Number of tracks
+* '''unknown ({{Red|20}})''' - Unknown data
+* '''unknown ({{Red|16}})''' - Unknown data
+* '''[[#Strings|RWS C String]] ({{Red|16}})''' - Stream Name
+* For each segment ....
+** '''uint32 ({{Red|4}})''' - Unknown data
+** '''uint32 ({{Red|4}})''' - Unknown data
+** '''unknown ({{Red|16}})''' - Unknown data
+** '''uint32 ({{Red|4}})''' - Segment data size (see [[#Segments|Segments]])
+** '''uint32 ({{Red|4}})''' - Unknown data
+* For each segment ....
+** '''unknown ({{Red|20}})''' - Unknown data
+* For each segment ....
+** '''[[#Strings|RWS C String]] ({{Red|16}})''' - Segment Name
+* For each track .... (Track Organization)
+** '''unknown ({{Red|16}})''' - Unknown data
+** '''uint32 ({{Red|4}})''' - Cluster Size
+** '''unknown ({{Red|8}})''' - Unknown Data
+** '''uint32 ({{Red|4}})''' - Bytes used per cluster
+** '''uint32 ({{Red|4}})''' - Track start offset
+* For each track .... (Track Parameters)
+** '''uint32 ({{Red|4}})''' - Sample Rate
+** '''unknown ({{Red|4}})''' - Unknown Data
+** '''uint32 ({{Red|4}})''' - Data Size
+** '''unknown ({{Red|1}})''' - Unknown Data (Probably for alignment)
+** '''byte ({{Red|1}})''' - Number of Channels
+** '''unknown ({{Red|2}})''' - Unknown Data (probably for alignment)
+** '''unknown ({{Red|2}})''' - Unknown Data
+** '''unknown ({{Red|12}})''' - Unknown Data
+** '''unknown ({{Red|16}})''' - Unknown Data
+** '''unknown ({{Red|4}})''' - Unknown Data
+* For each track ....
+** '''unknown ({{Red|16}})''' - Unknown Data
+* For each track ....
+** '''[[#Strings|RWS C String]] ({{Red|16}})''' - Track Name
+
+
+===== Audio Data Chunk =====
+
+This chunk actually contains the audio data, but as mentioned before, the exact format of this data depends entirely on the game itself. One game used just plain 16 bit signed big endian PCM data, while another used its own special version of IMA ADPCM. What is the same however is how the data is stored. 
+
+The audio data is stored in chunks. With multiple tracks, apparently the chunks are interleved, but I have not seen any examples of this so far, so I'm running under the assumption that the chunks all belong to the same track. In the [[#Audio Header Chunk|Audio Header Chunk]] , specifically the Track Organization section, you retrieved a few values, the Cluster Size and Bytes Used Per Cluster. A 'audio data chunk' contains audio data, but not all of it is used, so these two values tell you how big a chunk is, and how much of that data is actually used. 
+
+So to extract a one track, one segment audio file, you do something like this:
+
+<syntaxhighlight lang="python">
+
+with open(pcmFilePath, "wb") as f2:
+    while True:
+        # read audio data
+        tmp = f.read(realDataSize)
+
+        # write the audo data to a separate file for use for ffmpeg or other programs
+        f2.write(tmp)
+
+        # read the waste data to skip over it
+        f.read(wasteSize)
+
+    # write a dummmy null byte?
+    f2.write(b'\x00')
+</syntaxhighlight>
+
+A key thing to note is the NULL byte we write at the end. I'm not sure why this is needed, other then to obviously make it work (if it is not present, then the sound is either garbled completely, or has a faint hissing sound throughout the track). I'm guessing something is just not aligned somewhere or the engine takes care of it.
+
+
+<span id="Segments">
+Another thing of interest are Segments. It seems that a track can have multiple segments within it, and part of the [[#Audio Header Chunk|Audio Header Chunk]] are the segments and their data sizes. Since a track can have multiple segments that means that you have to know which part of the track are which segment or else they will all be connected together at the end. The segment's Data Size corresponds to how many bytes you have read so far, or essentially the number of audio data chunks, including the 'waste' size.
+
+Here is an example of reading the audio data with multiple segments
+
+<syntaxhighlight lang="python">
+
+for iterSegment in listOfSegments:
+
+    dataCounter = 0 # used to keep track of how many bytes we have read
+
+    with open(iterSegment.filePath, "wb") as f2:
+        while True:
+            # read audio data
+            tmp = f.read(realDataSize)
+
+            dataCounter += realDataSize
+
+            # read the waste data to skip over it
+            f.read(wasteSize)
+
+            dataCounter += wasteSize
+
+            if dataCounter <= iterSegment.dataSize:
+                # write the audo data to a separate file for use for ffmpeg or other programs
+                f2.write(tmp)
+
+                if dataCounter == iterSegment.dataSize:
+                    # we have reach the end of this segment, break and go to the next one
+                    break
+
+        # write a dummmy null byte?
+        f2.write(b'\x00')
+
+</syntaxhighlight>
+
+
+Then after you have extracted the audio data, you can use ffmpeg or your favorite audio conversion program to convert the audio into a desired format, although you will need to know the exact format that the audio is encoded in before it will work. 
+</span>
+
+=== Notes and Comments ===
+
+=== MultiEx BMS Script ===
+
+=== Supported by Programs === 
+
+=== Links ===
+
+=== Games === 
+
+{{GRAFPageFooter}}
+[[Category:Xbox 360 formats]]
+[[Category:PC formats]]
