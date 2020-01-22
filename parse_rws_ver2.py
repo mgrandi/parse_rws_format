@@ -55,10 +55,16 @@ def _readRwsCString(fileObj):
                 remainingChars = 16 - ((endPos - startPos) % 16)
                 fileObj.read(remainingChars)
 
-                # now we can return the string 
-                return stringBuffer.decode("utf-8")
+                # now we can return the string
+                try: 
+                    result = stringBuffer.decode("utf-8")
+                except UnicodeDecodeError as e:
+                    import pdb;pdb.set_trace()
+                    sys.exit("Error decoding utf-8 string: {}".format(e))
 
+                return result
         else:
+
             # end of file?
             sys.exit("unexpected end of file in _readRwsCString(), file position is at {}".format(fileObj.tell()))
             #return stringBuffer.decode("utf-8")
@@ -270,6 +276,7 @@ class RWSAudioHeader:
         # self.streamName2 = _readRwsCString(fileObj)
 
         # now for each track, create a RWSAudioTrack object for later
+        logging.info("\t\tNumtracks: {}".format(self.numTracks))
         for i in range(self.numTracks):
             self.trackList.append(RWSAudioTrack())
 
